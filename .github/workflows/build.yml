@@ -1,0 +1,61 @@
+name: Build Android APK (Unity)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['project.zip']
+
+jobs:
+  build:
+    name: Unity 6.3 → Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Распаковать проект
+        run: unzip -q project.zip
+
+      - name: Освободить место на диске
+        uses: jlumbroso/free-disk-space@main
+
+      - name: Кэш Library (ускоряет повторные сборки)
+        uses: actions/cache@v4
+        with:
+          path: MobileTacticalShooter_Unity6_Iteration3/Library
+          key: Library-Android-v1
+          restore-keys: Library-Android-
+
+      # Сцены в проекте нет — она генерируется кодом (DemoSceneBuilder).
+      # Запускаем Unity headless, который создаёт и сохраняет демо-сцену.
+      - name: Сгенерировать демо-сцену
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/project" \
+            -w /project \
+            -e UNITY_LICENSE="${{ secrets.UNITY_LICENSE }}" \
+            -e UNITY_EMAIL="${{ secrets.UNITY_EMAIL }}" \
+            -e UNITY_PASSWORD="${{ secrets.UNITY_PASSWORD }}" \
+            unityci/editor:ubuntu-6000.3.0f1-android-3 \
+            unity-editor -batchmode -nographics -quit \
+              -projectPath /project/MobileTacticalShooter_Unity6_Iteration3 \
+              -executeMethod DemoSceneBuilder.Build \
+              -logFile /dev/stdout
+
+      - name: Собрать APK
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: MobileTacticalShooter_Unity6_Iteration3
+          unityVersion: 6000.3.0f1
+          targetPlatform: Android
+          versioning: None
+
+      - name: Выложить APK в артефакты
+        uses: actions/upload-artifact@v4
+        with:
+          name: MobileTacticalShooter-APK
+          path: build/Android
